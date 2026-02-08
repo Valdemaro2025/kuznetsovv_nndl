@@ -982,6 +982,49 @@ $("btnInspect").addEventListener("click", async () => {
   }
 });
 
+// Manual Early Stopping + Restore Best Weights (because TFJS EarlyStopping.restoreBestWeights isn't implemented)
+function makeManualEarlyStopping(model, { monitor = "val_loss", patience = 5, minDelta = 0 } = {}) {
+  let best = Infinity;
+  let wait = 0;
+  let bestWeights = null;
+
+  function disposeWeights(ws) {
+    if (!ws) return;
+    ws.forEach((t) => t.dispose());
+  }
+
+  return {
+    onEpochEnd: async (epoch, logs) => {
+      const current = logs?.[monitor];
+
+      // If val_loss isn't available, we can't early-stop properly
+      if (typeof current !== "number" || !Number.isFinite(current)) return;
+
+      if (current < best - minDelta) {
+        best = current;
+        wait = 0;
+
+        // Save best weights (clone tensors)
+        disposeWeights(bestWeights);
+        bestWeights = model.getWeights().map((w) => w.clone());
+      } else {
+        wait += 1;
+        if (wait > patience) {
+          model.stopTraining = true;
+        }
+      }
+    },
+    onTrainEnd: async () => {
+      // Restore best weights
+      if (bestWeights) {
+        model.setWeights(bestWeights);
+        disposeWeights(bestWeights);
+        bestWeights = null;
+      }
+    },
+  };
+}
+
 $("btnTrain").addEventListener("click", async () => {
   try {
     if (!trainRows) {
@@ -1025,26 +1068,19 @@ $("btnTrain").addEventListener("click", async () => {
     const container = $("visTraining");
 
     // Early stopping
-    const earlyStop = tf.callbacks.earlyStopping({
-      monitor: "val_loss",
-      patience: 5,
-      restoreBestWeights: true,
-    });
+    const earlyStop = makeManualEarlyStopping(model, {
+  monitor: "val_loss",
+  patience: 5,
+  minDelta: 0,
+});
 
-    setStatus("training (50 epochs max, batch=32)...");
-    const fitCallbacks = tfvis.show.fitCallbacks(
-      container,
-      ["loss", "acc", "val_loss", "val_acc"],
-      { callbacks: ["onEpochEnd"] }
-    );
-
-    await model.fit(Xtrain, ytrain, {
-      epochs: 50,
-      batchSize: 32,
-      validationData: [Xval, yval],
-      callbacks: [earlyStop, fitCallbacks],
-      shuffle: true,
-    });
+await model.fit(Xtrain, ytrain, {
+  epochs: 50,
+  batchSize: 32,
+  validationData: [Xval, yval],
+  callbacks: [earlyStop, fitCallbacks],
+  shuffle: true,
+});
 
     // Persist validation tensors/state for evaluation
     if (valState?.Xval) {
