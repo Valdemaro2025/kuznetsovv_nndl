@@ -1,0 +1,365 @@
+<!-- index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Titanic TFJS (In-Browser) Binary Classifier</title>
+
+  <!-- CDNs (ONLY the ones you allowed) -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-vis@latest"></script>
+
+  <style>
+    :root{
+      --bg:#0b1020;
+      --card:#111a33;
+      --muted:#9bb0ff;
+      --text:#e7ecff;
+      --line:#22315f;
+      --accent:#6ee7ff;
+      --warn:#ffcc66;
+      --ok:#7dffb2;
+      --bad:#ff6e8a;
+      --shadow: 0 8px 24px rgba(0,0,0,.35);
+      --radius: 14px;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      background:linear-gradient(180deg, #070a14 0%, var(--bg) 100%);
+      color:var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+      line-height:1.4;
+    }
+    header{
+      padding:18px 16px;
+      border-bottom:1px solid var(--line);
+      position:sticky; top:0;
+      background:rgba(11,16,32,.92);
+      backdrop-filter: blur(10px);
+      z-index:10;
+    }
+    header h1{margin:0;font-size:18px;font-weight:800;letter-spacing:.2px}
+    header p{margin:6px 0 0;color:rgba(231,236,255,.8);font-size:13px}
+
+    .wrap{max-width:1200px;margin:0 auto;padding:14px 14px 40px}
+    .grid{
+      display:grid;
+      grid-template-columns: 1.2fr .8fr;
+      gap:14px;
+    }
+    @media (max-width: 900px){
+      .grid{grid-template-columns:1fr}
+      header{position:relative}
+    }
+    .card{
+      background: rgba(17,26,51,.95);
+      border:1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding:14px;
+    }
+    .card h2{
+      margin:0 0 10px;
+      font-size:15px;
+      font-weight:800;
+      color:var(--accent);
+    }
+    .sub{
+      margin:0 0 12px;
+      color:rgba(231,236,255,.8);
+      font-size:12.5px;
+    }
+    .row{
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+      align-items:center;
+    }
+    .row > *{flex: 0 0 auto}
+    label{
+      font-size:12px;
+      color:rgba(231,236,255,.85);
+      display:flex;
+      gap:8px;
+      align-items:center;
+    }
+    input[type="file"], input[type="number"], input[type="range"]{
+      background:#0c132a;
+      border:1px solid var(--line);
+      color:var(--text);
+      border-radius:10px;
+      padding:8px;
+      max-width:100%;
+    }
+    input[type="checkbox"]{transform: scale(1.05)}
+    button{
+      border:1px solid rgba(110,231,255,.35);
+      background: linear-gradient(180deg, rgba(110,231,255,.18), rgba(110,231,255,.05));
+      color:var(--text);
+      padding:9px 12px;
+      border-radius:12px;
+      cursor:pointer;
+      font-weight:750;
+      font-size:13px;
+      transition: transform .06s ease, border-color .2s ease;
+    }
+    button:hover{transform: translateY(-1px); border-color: rgba(110,231,255,.75)}
+    button:disabled{
+      opacity:.5;
+      cursor:not-allowed;
+      transform:none;
+    }
+    .pill{
+      display:inline-flex;
+      gap:8px;
+      align-items:center;
+      border:1px solid var(--line);
+      border-radius:999px;
+      padding:6px 10px;
+      background: rgba(12,19,42,.6);
+      font-size:12px;
+      color:rgba(231,236,255,.85);
+    }
+    .pill strong{color:var(--text)}
+    .status{
+      margin-top:10px;
+      padding:10px;
+      border:1px dashed rgba(155,176,255,.35);
+      border-radius: 12px;
+      background: rgba(12,19,42,.45);
+      font-size:12.5px;
+      color:rgba(231,236,255,.85);
+      white-space:pre-wrap;
+    }
+    .cols{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:14px;
+    }
+    @media (max-width: 900px){ .cols{grid-template-columns:1fr} }
+    .table-wrap{
+      overflow:auto;
+      border:1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(12,19,42,.55);
+    }
+    table{
+      width:100%;
+      border-collapse: collapse;
+      min-width: 520px;
+      font-size:12px;
+    }
+    th, td{
+      padding:8px 10px;
+      border-bottom:1px solid rgba(34,49,95,.75);
+      text-align:left;
+      vertical-align: top;
+    }
+    th{
+      position:sticky; top:0;
+      background: rgba(12,19,42,.9);
+      color: rgba(231,236,255,.9);
+      font-weight:850;
+      z-index:2;
+    }
+    tr:hover td{background: rgba(110,231,255,.05)}
+    .note{
+      color:rgba(231,236,255,.75);
+      font-size:12px;
+      margin-top:8px;
+    }
+    .warn{color:var(--warn)}
+    .ok{color:var(--ok)}
+    .bad{color:var(--bad)}
+    .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace}
+    .divider{height:1px;background:var(--line);margin:12px 0}
+
+    /* tfjs-vis containers look better with some padding */
+    .vis{
+      border:1px solid var(--line);
+      border-radius: 12px;
+      padding:10px;
+      background: rgba(12,19,42,.45);
+      min-height: 120px;
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h1>Titanic TFJS • Shallow Binary Classifier (Browser-Only, GitHub Pages Ready)</h1>
+    <p>Load Kaggle Titanic CSVs → inspect → preprocess → train → evaluate (ROC + threshold slider) → predict + export.</p>
+  </header>
+
+  <div class="wrap">
+    <div class="grid">
+      <!-- LEFT COLUMN -->
+      <div class="card">
+        <h2>Data Load</h2>
+        <p class="sub">Load <span class="mono">train.csv</span> and <span class="mono">test.csv</span> from Kaggle. Parsing is robust to commas inside quotes in passenger names.</p>
+        <div class="row">
+          <label>Train CSV:
+            <input id="trainFile" type="file" accept=".csv" />
+          </label>
+          <label>Test CSV:
+            <input id="testFile" type="file" accept=".csv" />
+          </label>
+          <button id="btnInspect">Inspect Data</button>
+        </div>
+        <div class="status" id="status">Status: idle</div>
+      </div>
+
+      <!-- RIGHT COLUMN -->
+      <div class="card">
+        <h2>Preprocessing</h2>
+        <p class="sub">Impute and feature-engineer toggles. One-hot encode categorical fields and standardize numeric fields.</p>
+        <div class="row">
+          <label><input id="toggleFamilySize" type="checkbox" checked /> Add FamilySize = SibSp + Parch + 1</label>
+          <label><input id="toggleIsAlone" type="checkbox" checked /> Add IsAlone = (FamilySize === 1)</label>
+        </div>
+        <div class="divider"></div>
+        <div class="row">
+          <span class="pill">Age impute: <strong>median</strong></span>
+          <span class="pill">Embarked impute: <strong>mode</strong></span>
+          <span class="pill">Numeric scaling: <strong>standardize</strong></span>
+        </div>
+        <p class="note">Final feature list, X/y tensor shapes, and preprocessing stats are logged in console.</p>
+      </div>
+
+      <div class="card">
+        <h2>Data Inspection</h2>
+        <p class="sub">Preview first 10 rows, dataset shape, missing-value % per column, and survival-rate charts.</p>
+
+        <div class="cols">
+          <div>
+            <div class="row">
+              <span class="pill">Train shape: <strong id="trainShape">—</strong></span>
+              <span class="pill">Test shape: <strong id="testShape">—</strong></span>
+            </div>
+            <div class="divider"></div>
+            <h3 style="margin:0 0 8px;font-size:13px;color:rgba(231,236,255,.92)">Train Preview (first 10 rows)</h3>
+            <div class="table-wrap" id="previewTableWrap">
+              <div style="padding:10px;color:rgba(231,236,255,.7);font-size:12px">
+                Load files and click <strong>Inspect Data</strong>.
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h3 style="margin:0 0 8px;font-size:13px;color:rgba(231,236,255,.92)">Missing Values (% by column)</h3>
+            <div class="table-wrap" id="missingTableWrap">
+              <div style="padding:10px;color:rgba(231,236,255,.7);font-size:12px">
+                Missing-value stats will appear here after inspection.
+              </div>
+            </div>
+            <div class="divider"></div>
+            <div class="vis" id="visSurvivalBySex"></div>
+            <div class="divider"></div>
+            <div class="vis" id="visSurvivalByPclass"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Model</h2>
+        <p class="sub">Architecture: Dense(16, relu) → Dense(1, sigmoid). Compiled with Adam + binaryCrossentropy + accuracy.</p>
+        <div class="row">
+          <button id="btnTrain">Train</button>
+          <button id="btnEvaluate">Evaluate</button>
+          <button id="btnPredict">Predict</button>
+          <button id="btnExportModel">Export Model</button>
+        </div>
+        <p class="note">Training uses 80/20 <strong>stratified</strong> split and early stopping (patience=5).</p>
+      </div>
+
+      <div class="card">
+        <h2>Training</h2>
+        <p class="sub">Live charts appear here during training.</p>
+        <div class="vis" id="visTraining"></div>
+      </div>
+
+      <div class="card">
+        <h2>Evaluation &amp; Metrics</h2>
+        <p class="sub">
+          Metrics are computed on the validation split. Use the threshold slider to update the confusion matrix and Precision/Recall/F1 dynamically.
+        </p>
+
+        <div class="row">
+          <label style="flex:1 1 260px">
+            Threshold:
+            <input id="thresholdSlider" type="range" min="0" max="1" step="0.01" value="0.50" />
+            <span class="pill"><strong id="thresholdValue">0.50</strong></span>
+          </label>
+        </div>
+
+        <div class="divider"></div>
+
+        <h3 style="margin:0 0 8px;font-size:13px;color:rgba(231,236,255,.92)">Evaluation Table</h3>
+        <div class="table-wrap" id="evalTableWrap">
+          <div style="padding:10px;color:rgba(231,236,255,.7);font-size:12px">
+            Click <strong>Evaluate</strong> after training to populate metrics.
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <h3 style="margin:0 0 8px;font-size:13px;color:rgba(231,236,255,.92)">Confusion Matrix (dynamic)</h3>
+        <div class="table-wrap" id="confusionMatrixWrap">
+          <div style="padding:10px;color:rgba(231,236,255,.7);font-size:12px">
+            Confusion matrix will appear here after evaluation.
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <h3 style="margin:0 0 8px;font-size:13px;color:rgba(231,236,255,.92)">ROC Curve</h3>
+        <div class="vis" id="visROC"></div>
+
+        <div class="divider"></div>
+
+        <h3 style="margin:0 0 8px;font-size:13px;color:rgba(231,236,255,.92)">Relative Feature Importance (Sigmoid Gate)</h3>
+        <div class="vis" id="visFeatureImportance"></div>
+
+        <p class="note warn">
+          Note: Feature importance here is a lightweight <strong>interpretability heuristic</strong> (sigmoid gate), not SHAP.
+        </p>
+      </div>
+
+      <div class="card">
+        <h2>Prediction</h2>
+        <p class="sub">Run inference on <span class="mono">test.csv</span>, apply your threshold, and download submission + probabilities CSV files.</p>
+        <div class="row">
+          <button id="btnDownloadSubmission">Download submission.csv</button>
+          <button id="btnDownloadProbabilities">Download probabilities.csv</button>
+        </div>
+        <p class="note">Downloads are enabled after you run <strong>Predict</strong>.</p>
+      </div>
+
+      <div class="card">
+        <h2>Export</h2>
+        <p class="sub">Export the trained TFJS model directly from the browser.</p>
+        <p class="note">Uses <span class="mono">model.save('downloads://titanic-tfjs')</span> which downloads model.json + weights.</p>
+      </div>
+
+      <div class="card">
+        <h2>Deployment Notes</h2>
+        <p class="sub">How to deploy on GitHub Pages (no server needed):</p>
+        <ol style="margin:0;padding-left:18px;color:rgba(231,236,255,.9);font-size:13px">
+          <li>Create a new <strong>public</strong> GitHub repository (e.g., <span class="mono">titanic-tfjs</span>).</li>
+          <li>Add <span class="mono">index.html</span> and <span class="mono">app.js</span> to the repo root.</li>
+          <li>Commit + push to <strong>main</strong>.</li>
+          <li>Open repo <strong>Settings → Pages</strong>.</li>
+          <li>Set <strong>Source</strong> to <strong>Deploy from a branch</strong>, choose <strong>main</strong> and <strong>/ (root)</strong>, then Save.</li>
+          <li>After GitHub Pages builds, open the provided URL (it will look like <span class="mono">https://&lt;user&gt;.github.io/&lt;repo&gt;/</span>).</li>
+        </ol>
+        <p class="note">Tip: Keep the Kaggle CSVs local; you’ll load them via the file pickers at runtime.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Your app logic -->
+  <script src="./app.js"></script>
+</body>
+</html>
