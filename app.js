@@ -1031,7 +1031,41 @@ $("btnTrain").addEventListener("click", async () => {
       alertUser("Please load train.csv and click Inspect Data first.");
       return;
     }
+    // Disable buttons during training
+$("btnTrain").disabled = true;
+$("btnEvaluate").disabled = true;
+$("btnPredict").disabled = true;
+$("btnExportModel").disabled = true;
 
+// Clear old charts
+$("visTraining").innerHTML = "";
+
+// tfjs-vis callbacks
+const fitCallbacks = tfvis.show.fitCallbacks(
+  $("visTraining"),
+  ["loss", "acc", "val_loss", "val_acc"],
+  { callbacks: ["onEpochEnd"] }
+);
+
+// Manual early stopping (your fixed version)
+const earlyStop = makeManualEarlyStopping(model, {
+  monitor: "val_loss",
+  patience: 5,
+});
+
+await model.fit(Xtrain, ytrain, {
+  epochs: 50,
+  batchSize: 32,
+  validationData: [Xval, yval],
+  callbacks: [earlyStop, fitCallbacks],
+  shuffle: true,
+});
+
+// Re-enable buttons
+$("btnTrain").disabled = false;
+$("btnEvaluate").disabled = false;
+$("btnPredict").disabled = false;
+$("btnExportModel").disabled = false;
     setStatus("preprocessing train.csv...");
     tf.engine().startScope();
 
@@ -1074,6 +1108,18 @@ $("btnTrain").addEventListener("click", async () => {
   minDelta: 0,
 });
 
+// Clear training visualization container
+$("visTraining").innerHTML = "";
+
+// Create tfjs-vis fit callbacks
+const fitCallbacks = tfvis.show.fitCallbacks(
+  $("visTraining"),
+  ["loss", "acc", "val_loss", "val_acc"],
+  {
+    callbacks: ["onEpochEnd"],
+  }
+);
+    
 await model.fit(Xtrain, ytrain, {
   epochs: 50,
   batchSize: 32,
