@@ -817,46 +817,73 @@ async function computeSigmoidGateImportance(prep, Xval, yval) {
 
   const featureDim = prep.featureNames.length;
 
-  // Freeze base model
+  // Freeze base model weights (post-hoc interpretability)
   model.trainable = false;
   model.layers.forEach((l) => (l.trainable = false));
 
+  // Build: Input -> SigmoidGateLayer -> Frozen base model
   const input = tf.input({ shape: [featureDim] });
-  const gated = new SigmoidGateLayer(featureDim).apply(input);
+  const gateLayer = new SigmoidGateLayer(featureDim);
+  const gated = gateLayer.apply(input);
   const out = model.apply(gated);
+
   const gateModel = tf.model({ inputs: input, outputs: out });
-
   gateModel.compile({ optimizer: tf.train.adam(0.05), loss: "binaryCrossentropy" });
-  await gateModel.fit(Xval, yval, { epochs: 40, batchSize: 64, verbose: 0 });
 
-  const gateLayer = gateModel.layers.find((l) => l.getClassName() === "SigmoidGateLayer");
-  const gateW = gateLayer.getWeights()[0]; // [d]
-  const gateVals = tf.sigmoid(gateW).dataSync(); // [0..1]
+  // Train gates briefly (heuristic)
+  await gateModel.fit(Xval, yval, {
+    epochs: 40,
+    batchSize: 64,
+    verbose: 0,
+  });
 
-  // Normalize to sum=1
-  const sum = gateVals.reduce((p, c) => p + c, 0) || 1;
-  const norm = Array.from(gateVals).map((v) => v / sum);
+  // Read sigmoid(gateW) SAFELY.
+  // IMPORTANT: Do NOT dispose layer weight variables directly.
+  const gateScores = await tf.tidy(async () => {
+    // gateLayer.w is a LayerVariable; .read() gives a Tensor
+    const wTensor = gateLayer.w.read();          // Tensor [d]
+    const gTensor = tf.sigmoid(wTensor);         // Tensor [d]
+    const gArr = Array.from(await gTensor.data()); // JS numbers
+    return gArr;
+  });
 
-  gateW.dispose();
+  // Normalize to sum=1 so it behaves like "relative importance"
+  const sum = gateScores.reduce((p, c) => p + c, 0) || 1;
+  const norm = gateScores.map((v) => v / sum);
+
+  // Cleanup model we created (this disposes internal variables safely)
   gateModel.dispose();
 
-  // Unfreeze base model
+  // Unfreeze base model back to normal
   model.trainable = true;
   model.layers.forEach((l) => (l.trainable = true));
 
-  return norm;
+  return norm; // length = featureDim, sums to ~1
 }
 
 function renderFeatureImportance(featureNames, scores) {
   const el = $("visFeatureImportance");
   if (!el) return;
+
+  // If no data, show a helpful message instead of silent failure
+  if (!featureNames?.length || !scores?.length || featureNames.length !== scores.length) {
+    el.innerHTML = `<div style="color:rgba(231,236,255,.7);font-size:12px;padding:8px">
+      Feature importance unavailable (mismatched feature list / scores).
+    </div>`;
+    return;
+  }
+
   el.innerHTML = "";
 
   const values = featureNames.map((name, i) => ({
     Feature: name,
-    Importance: Number(scores[i].toFixed(6)),
-  })).sort((a, b) => b.Importance - a.Importance);
+    Importance: Number(scores[i]),
+  }));
 
+  // Sort descending so it looks meaningful
+  values.sort((a, b) => b.Importance - a.Importance);
+
+  // tfjs-vis barchart expects numeric y field; keep it as "Importance"
   tfvis.render.barchart(
     el,
     values,
@@ -868,7 +895,6 @@ function renderFeatureImportance(featureNames, scores) {
     }
   );
 }
-
 // ------------------------------
 // Prediction exports
 // ------------------------------
