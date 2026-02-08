@@ -284,6 +284,34 @@ function normalizeCat(x) {
   return String(x).trim();
 }
 
+// tfjs-vis barchart helper (stable across tfjs-vis versions)
+// Expects labels[] and values[] same length.
+// Renders as {values: [{x, y}, ...]}
+function renderBarChartTFVis(containerEl, title, xLabel, yLabel, labels, values) {
+  if (!containerEl) return;
+
+  // Guard against empty input (avoid blank/axes-only charts)
+  if (!labels?.length || !values?.length || labels.length !== values.length) {
+    containerEl.innerHTML = `
+      <div style="color:rgba(231,236,255,.7);font-size:12px;padding:8px">
+        Chart unavailable (no data).
+      </div>`;
+    return;
+  }
+
+  const data = {
+    values: labels.map((x, i) => ({ x, y: Number(values[i]) })),
+  };
+
+  containerEl.innerHTML = "";
+  tfvis.render.barchart(containerEl, data, {
+    title,
+    xLabel,
+    yLabel,
+    height: 260,
+  });
+}
+
 // Charts: survival rates
 function computeSurvivalRateByGroup(rows, groupCol) {
   const map = new Map();
@@ -784,30 +812,23 @@ function renderFeatureImportance(featureNames, scores) {
   if (!el) return;
 
   if (!featureNames?.length || !scores?.length || featureNames.length !== scores.length) {
-    el.innerHTML = `<div style="color:rgba(231,236,255,.7);font-size:12px;padding:8px">
-      Feature importance unavailable (mismatched feature list / scores).
-    </div>`;
+    el.innerHTML = `
+      <div style="color:rgba(231,236,255,.7);font-size:12px;padding:8px">
+        Feature importance unavailable (no data).
+      </div>`;
     return;
   }
 
-  // Ensure at least something visible
-  const values = featureNames.map((name, i) => ({
-    Feature: name,
-    Importance: Number(scores[i]),
-  })).sort((a, b) => b.Importance - a.Importance);
+  const pairs = featureNames.map((f, i) => ({ f, s: Number(scores[i]) }))
+                            .sort((a, b) => b.s - a.s);
 
-  el.innerHTML = "";
-
-  // IMPORTANT: keep exactly one numeric column ("Importance") so tfvis renders bars reliably.
-  tfvis.render.barchart(
+  renderBarChartTFVis(
     el,
-    values,
-    {
-      title: "Relative Feature Importance (Sigmoid Gate)",
-      xLabel: "Feature",
-      yLabel: "Relative importance (normalized)",
-      height: 320,
-    }
+    "Relative Feature Importance (Sigmoid Gate)",
+    "Feature",
+    "Relative importance (normalized)",
+    pairs.map(p => p.f),
+    pairs.map(p => p.s)
   );
 }
 
@@ -884,8 +905,26 @@ $("btnInspect")?.addEventListener("click", async () => {
 
     const visSex = $("visSurvivalBySex");
     const visPclass = $("visSurvivalByPclass");
-    if (visSex) renderBarChartRate(visSex, "Survival Rate by Sex (Train)", bySex);
-    if (visPclass) renderBarChartRate(visPclass, "Survival Rate by Pclass (Train)", byPclass);
+    if (visSex) {
+  renderBarChartTFVis(
+    visSex,
+    "Survival Rate by Sex (Train)",
+    "Sex",
+    "Survival Rate",
+    bySex.map(d => d.group),
+    bySex.map(d => d.rate)
+  );
+}
+    if (visPclass) {
+  renderBarChartTFVis(
+    visPclass,
+    "Survival Rate by Pclass (Train)",
+    "Pclass",
+    "Survival Rate",
+    byPclass.map(d => d.group),
+    byPclass.map(d => d.rate)
+  );
+}
 
     setStatus(`loaded train.csv${testRows ? " + test.csv" : ""}. ready.`);
   } catch (err) {
