@@ -606,7 +606,7 @@ function createModel(inputShape) {
             useBias: false,
             kernelInitializer: 'ones',
             trainable: true,
-            inputShape: [inputShape], // FIX: Added inputShape
+            inputShape: [inputShape],
             name: 'feature_gate'
         }));
         
@@ -622,7 +622,7 @@ function createModel(inputShape) {
         model.add(tf.layers.dense({
             units: 16,
             activation: 'relu',
-            inputShape: [inputShape], // FIX: Added inputShape here too
+            inputShape: [inputShape],
             kernelInitializer: 'heNormal',
             name: 'hidden'
         }));
@@ -640,6 +640,9 @@ function createModel(inputShape) {
         loss: 'binaryCrossentropy',
         metrics: ['accuracy']
     });
+    
+    // Store model reference in app state
+    appState.model = model;
     
     // Display model summary
     document.getElementById('modelSummary').innerHTML = `
@@ -704,6 +707,12 @@ async function trainModel() {
                         acc: logs.acc,
                         val_acc: logs.val_acc
                     });
+                },
+                onTrainEnd: () => {
+                    // Display feature importance after training
+                    setTimeout(() => {
+                        displayFeatureImportance();
+                    }, 100);
                 }
             }
         });
@@ -799,6 +808,9 @@ function evaluateModel() {
         // Calculate AUC (simplified for demo)
         const auc = calculateAUC(predValues, trueValues);
         document.getElementById('aucScore').textContent = auc.toFixed(3);
+        
+        // Display feature importance if gate is enabled
+        displayFeatureImportance();
         
         updateStatus('loadStatus', 'Evaluation completed. Adjust threshold slider.', 'success');
         
@@ -997,7 +1009,100 @@ async function exportModel() {
         updateStatus('trainingStatus', `Failed to export model: ${error.message}`, 'error');
     }
 }
+// ============================================================================
+// FEATURE IMPORTANCE EXTRACTION AND DISPLAY
+// ============================================================================
 
+function displayFeatureImportance() {
+    if (!appState.model) {
+        return;
+    }
+    
+    const container = document.getElementById('featureImportance');
+    const useFeatureGate = document.getElementById('useFeatureGate').checked;
+    
+    if (!useFeatureGate) {
+        container.innerHTML = `
+            <h3>Feature Importance</h3>
+            <p>Feature importance gate is disabled. Enable it in Preprocessing section.</p>
+        `;
+        return;
+    }
+    
+    try {
+        // Get the feature gate layer
+        const gateLayer = appState.model.layers.find(layer => layer.name === 'feature_gate');
+        
+        if (!gateLayer) {
+            container.innerHTML = `
+                <h3>Feature Importance</h3>
+                <p>No feature gate layer found in the model.</p>
+            `;
+            return;
+        }
+        
+        // Get weights from the gate layer
+        const weights = gateLayer.getWeights()[0];
+        const importanceValues = Array.from(weights.dataSync());
+        
+        // Normalize importance scores (0 to 1)
+        const maxVal = Math.max(...importanceValues);
+        const minVal = Math.min(...importanceValues);
+        const normalized = importanceValues.map(val => 
+            maxVal !== minVal ? (val - minVal) / (maxVal - minVal) : 0.5
+        );
+        
+        // Create feature importance display
+        let html = '<h3>Feature Importance (Sigmoid Gate)</h3>';
+        html += '<p>Higher values indicate more important features for prediction:</p>';
+        
+        // Create bars for each feature
+        normalized.forEach((importance, index) => {
+            const featureName = appState.featureNames[index] || `Feature ${index + 1}`;
+            const rawValue = importanceValues[index].toFixed(3);
+            const percentage = Math.round(importance * 100);
+            
+            html += `
+                <div style="margin: 8px 0;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                        <span style="font-size: 0.9em;">${featureName}</span>
+                        <span style="font-weight: bold; color: #82b1ff;">${rawValue}</span>
+                    </div>
+                    <div style="height: 10px; background: rgba(255, 255, 255, 0.1); border-radius: 5px; overflow: hidden;">
+                        <div style="height: 100%; width: ${percentage}%; 
+                            background: linear-gradient(90deg, #448aff, #82b1ff); 
+                            border-radius: 5px;"></div>
+                    </div>
+                </div>
+            `;
+        });
+        
+        // Add summary statistics
+        const avgImportance = (normalized.reduce((a, b) => a + b, 0) / normalized.length).toFixed(3);
+        
+        html += `
+            <div style="margin-top: 15px; padding: 10px; background: rgba(68, 138, 255, 0.1); border-radius: 6px;">
+                <div style="display: flex; justify-content: space-between;">
+                    <span>Average importance:</span>
+                    <span style="font-weight: bold;">${avgImportance}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-top: 5px;">
+                    <span>Most important feature:</span>
+                    <span style="font-weight: bold;">${appState.featureNames[normalized.indexOf(Math.max(...normalized))]}</span>
+                </div>
+            </div>
+        `;
+        
+        container.innerHTML = html;
+        
+    } catch (error) {
+        console.error('Error displaying feature importance:', error);
+        container.innerHTML = `
+            <h3>Feature Importance</h3>
+            <p class="status error">Error displaying feature importance: ${error.message}</p>
+        `;
+    }
+}
 // ============================================================================
 // EVENT LISTENERS AND INITIALIZATION
 // ============================================================================
