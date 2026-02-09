@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Titanic Binary Classifier | TensorFlow.js</title>
+    <title>Titanic Classifier | TensorFlow.js</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         * {
@@ -15,19 +15,18 @@
         }
 
         body {
-            background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
-            color: #e0e0e0;
+            background: linear-gradient(135deg, #1a237e, #311b92);
+            color: #e3f2fd;
             min-height: 100vh;
             padding: 20px;
-            line-height: 1.6;
         }
 
         .container {
             max-width: 1400px;
             margin: 0 auto;
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 25px;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
         }
 
         @media (max-width: 1100px) {
@@ -39,55 +38,54 @@
         header {
             grid-column: 1 / -1;
             text-align: center;
-            padding: 25px;
-            background: rgba(255, 255, 255, 0.05);
+            padding: 30px;
+            background: rgba(255, 255, 255, 0.08);
             border-radius: 15px;
             margin-bottom: 20px;
             border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
         h1 {
-            color: #64b5f6;
+            color: #82b1ff;
             font-size: 2.8rem;
             margin-bottom: 10px;
         }
 
         .subtitle {
-            color: #90a4ae;
-            font-size: 1.2rem;
+            color: #bbdefb;
+            font-size: 1.1rem;
         }
 
         .card {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 15px;
-            padding: 25px;
+            background: rgba(255, 255, 255, 0.07);
+            border-radius: 12px;
+            padding: 20px;
             border: 1px solid rgba(255, 255, 255, 0.1);
-            transition: transform 0.3s, border-color 0.3s;
+            transition: all 0.3s ease;
         }
 
         .card:hover {
-            transform: translateY(-5px);
-            border-color: #64b5f6;
+            transform: translateY(-3px);
+            border-color: #448aff;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
         }
 
         .card-title {
-            color: #4fc3f7;
-            font-size: 1.5rem;
-            margin-bottom: 20px;
+            color: #448aff;
+            font-size: 1.4rem;
+            margin-bottom: 15px;
             display: flex;
             align-items: center;
             gap: 10px;
-        }
-
-        .card-title i {
-            font-size: 1.3rem;
+            border-bottom: 2px solid rgba(68, 138, 255, 0.3);
+            padding-bottom: 8px;
         }
 
         .btn {
-            background: linear-gradient(45deg, #2196f3, #0d47a1);
+            background: linear-gradient(45deg, #2979ff, #2962ff);
             color: white;
             border: none;
-            padding: 12px 25px;
+            padding: 12px 24px;
             border-radius: 8px;
             cursor: pointer;
             font-size: 1rem;
@@ -96,12 +94,12 @@
             display: inline-flex;
             align-items: center;
             gap: 8px;
-            margin: 5px;
+            margin: 5px 0;
         }
 
         .btn:hover {
-            background: linear-gradient(45deg, #0d47a1, #1565c0);
-            transform: scale(1.03);
+            background: linear-gradient(45deg, #2962ff, #2979ff);
+            transform: scale(1.05);
         }
 
         .btn:disabled {
@@ -110,167 +108,134 @@
             transform: none;
         }
 
-        .btn-secondary {
-            background: linear-gradient(45deg, #455a64, #263238);
-        }
-
-        .btn-secondary:hover {
-            background: linear-gradient(45deg, #37474f, #263238);
-        }
-
         .btn-success {
-            background: linear-gradient(45deg, #2e7d32, #1b5e20);
+            background: linear-gradient(45deg, #00c853, #00e676);
         }
 
         .btn-success:hover {
-            background: linear-gradient(45deg, #1b5e20, #2e7d32);
+            background: linear-gradient(45deg, #00e676, #00c853);
         }
 
         .file-input {
-            margin: 15px 0;
-            padding: 12px;
-            background: rgba(255, 255, 255, 0.07);
-            border-radius: 8px;
-            border: 1px dashed #64b5f6;
+            margin: 10px 0;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 6px;
+            border: 2px dashed #448aff;
         }
 
         .status {
-            padding: 15px;
-            margin: 15px 0;
-            border-radius: 8px;
-            background: rgba(33, 150, 243, 0.1);
-            border-left: 4px solid #2196f3;
+            padding: 12px;
+            margin: 10px 0;
+            border-radius: 6px;
+            background: rgba(68, 138, 255, 0.1);
+            border-left: 4px solid #448aff;
+            font-size: 0.95rem;
         }
 
         .status.error {
-            background: rgba(244, 67, 54, 0.1);
-            border-left-color: #f44336;
+            background: rgba(255, 82, 82, 0.1);
+            border-left-color: #ff5252;
         }
 
         .status.success {
-            background: rgba(76, 175, 80, 0.1);
-            border-left-color: #4caf50;
-        }
-
-        .data-preview {
-            overflow-x: auto;
-            max-height: 300px;
-            margin: 15px 0;
+            background: rgba(105, 240, 174, 0.1);
+            border-left-color: #69f0ae;
         }
 
         table {
             width: 100%;
             border-collapse: collapse;
             background: rgba(255, 255, 255, 0.05);
+            margin: 10px 0;
         }
 
         th, td {
-            padding: 10px;
+            padding: 8px 12px;
             text-align: left;
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         }
 
         th {
-            background: rgba(33, 150, 243, 0.2);
-            color: #64b5f6;
-        }
-
-        tr:hover {
-            background: rgba(255, 255, 255, 0.03);
+            background: rgba(68, 138, 255, 0.2);
+            color: #82b1ff;
         }
 
         .metric-box {
             display: flex;
             justify-content: space-between;
             background: rgba(255, 255, 255, 0.05);
-            padding: 15px;
-            border-radius: 8px;
-            margin: 10px 0;
+            padding: 12px;
+            border-radius: 6px;
+            margin: 8px 0;
         }
 
         .metric-label {
-            color: #90a4ae;
+            color: #bbdefb;
         }
 
         .metric-value {
-            color: #4fc3f7;
+            color: #82b1ff;
             font-weight: bold;
-            font-size: 1.2rem;
         }
 
         .slider-container {
-            margin: 20px 0;
+            margin: 15px 0;
         }
 
         .slider {
             width: 100%;
-            height: 10px;
-            border-radius: 5px;
+            height: 8px;
+            border-radius: 4px;
             background: #37474f;
             outline: none;
             -webkit-appearance: none;
+            margin: 10px 0;
         }
 
         .slider::-webkit-slider-thumb {
             -webkit-appearance: none;
-            width: 22px;
-            height: 22px;
+            width: 20px;
+            height: 20px;
             border-radius: 50%;
-            background: #2196f3;
+            background: #448aff;
             cursor: pointer;
         }
 
         .confusion-matrix {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
-            gap: 5px;
-            margin: 20px 0;
+            gap: 4px;
+            margin: 15px 0;
             text-align: center;
         }
 
         .confusion-cell {
-            padding: 15px;
-            border-radius: 8px;
+            padding: 12px;
+            border-radius: 6px;
             font-weight: bold;
         }
 
-        .true-negative { background: rgba(76, 175, 80, 0.3); }
-        .false-positive { background: rgba(244, 67, 54, 0.3); }
-        .false-negative { background: rgba(244, 67, 54, 0.3); }
-        .true-positive { background: rgba(76, 175, 80, 0.3); }
+        .true-negative { background: rgba(105, 240, 174, 0.3); }
+        .false-positive { background: rgba(255, 82, 82, 0.3); }
+        .false-negative { background: rgba(255, 82, 82, 0.3); }
+        .true-positive { background: rgba(105, 240, 174, 0.3); }
 
-        .feature-importance {
-            margin: 20px 0;
-        }
-
-        .importance-bar {
-            height: 20px;
-            background: linear-gradient(90deg, #2196f3, #64b5f6);
-            border-radius: 10px;
-            margin: 8px 0;
-            transition: width 0.5s;
-        }
-
-        footer {
-            grid-column: 1 / -1;
-            text-align: center;
-            padding: 25px;
-            color: #90a4ae;
-            font-size: 0.9rem;
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
-            margin-top: 30px;
+        .data-preview {
+            overflow-x: auto;
+            max-height: 300px;
+            margin: 10px 0;
         }
 
         .toggle-container {
             display: flex;
             align-items: center;
-            margin: 10px 0;
+            margin: 8px 0;
             gap: 10px;
         }
 
         .toggle-switch {
             position: relative;
-            display: inline-block;
             width: 50px;
             height: 24px;
         }
@@ -306,43 +271,53 @@
         }
 
         input:checked + .toggle-slider {
-            background-color: #2196f3;
+            background-color: #448aff;
         }
 
         input:checked + .toggle-slider:before {
             transform: translateX(26px);
+        }
+
+        footer {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 20px;
+            color: #90a4ae;
+            font-size: 0.9rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            margin-top: 20px;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1><i class="fas fa-ship"></i> Titanic Survival Classifier</h1>
-            <p class="subtitle">Train a shallow neural network directly in your browser using TensorFlow.js</p>
-            <p class="subtitle">No backend required • GitHub Pages compatible</p>
+            <h1><i class="fas fa-ship"></i> Titanic Survival Predictor</h1>
+            <p class="subtitle">Train a neural network directly in your browser • No backend required</p>
+            <p class="subtitle">Upload your CSV files or use demo data</p>
         </header>
 
-        <!-- Data Load Section -->
+        <!-- Section 1: Data Load -->
         <section class="card">
             <h2 class="card-title"><i class="fas fa-file-upload"></i> 1. Load Data</h2>
-            <p>Upload Titanic dataset CSV files from Kaggle. Training runs entirely in your browser.</p>
+            <p>Upload Titanic CSV files from Kaggle or use demo data.</p>
             
             <div class="file-input">
-                <label for="trainFile"><strong>Training Data (train.csv):</strong></label>
-                <input type="file" id="trainFile" accept=".csv" style="margin-top: 8px; width: 100%;">
+                <label><strong>Training Data (train.csv):</strong></label>
+                <input type="file" id="trainFile" accept=".csv" style="margin-top: 5px; width: 100%; padding: 8px;">
             </div>
             
             <div class="file-input">
-                <label for="testFile"><strong>Test Data (test.csv):</strong></label>
-                <input type="file" id="testFile" accept=".csv" style="margin-top: 8px; width: 100%;">
+                <label><strong>Test Data (test.csv):</strong></label>
+                <input type="file" id="testFile" accept=".csv" style="margin-top: 5px; width: 100%; padding: 8px;">
             </div>
             
             <div class="toggle-container">
                 <label class="toggle-switch">
-                    <input type="checkbox" id="useDemoData">
+                    <input type="checkbox" id="useDemoData" checked>
                     <span class="toggle-slider"></span>
                 </label>
-                <span>Use demo data (if no files uploaded)</span>
+                <span>Use demo data (loaded instantly)</span>
             </div>
             
             <button id="loadBtn" class="btn">
@@ -350,23 +325,23 @@
             </button>
             
             <div id="loadStatus" class="status">
-                <i class="fas fa-info-circle"></i> Ready to load data. Click the button above or upload files.
+                <i class="fas fa-info-circle"></i> Ready to load data. Check "Use demo data" or upload files.
             </div>
         </section>
 
-        <!-- Data Inspection Section -->
+        <!-- Section 2: Data Inspection -->
         <section class="card">
-            <h2 class="card-title"><i class="fas fa-search"></i> 2. Data Inspection</h2>
+            <h2 class="card-title"><i class="fas fa-chart-bar"></i> 2. Data Inspection</h2>
             <div id="inspectionContent">
-                <p>Load data to see dataset preview, statistics, and visualizations.</p>
+                <p>Data will appear here after loading.</p>
             </div>
             <div id="chartsContainer"></div>
         </section>
 
-        <!-- Preprocessing Section -->
+        <!-- Section 3: Preprocessing -->
         <section class="card">
             <h2 class="card-title"><i class="fas fa-cogs"></i> 3. Preprocessing</h2>
-            <p>Configure how features are processed before training.</p>
+            <p>Configure feature processing options.</p>
             
             <div class="toggle-container">
                 <label class="toggle-switch">
@@ -381,20 +356,20 @@
                     <input type="checkbox" id="useFeatureGate" checked>
                     <span class="toggle-slider"></span>
                 </label>
-                <span>Enable learnable feature importance gate</span>
+                <span>Enable feature importance learning</span>
             </div>
             
             <div id="preprocessStatus" class="status">
-                Preprocessing will run automatically before training.
+                Preprocessing runs automatically before training.
             </div>
             
             <div id="featureList"></div>
         </section>
 
-        <!-- Model & Training Section -->
+        <!-- Section 4: Model & Training -->
         <section class="card">
             <h2 class="card-title"><i class="fas fa-brain"></i> 4. Model & Training</h2>
-            <p>Shallow neural network: Dense(16, relu) → Dense(1, sigmoid)</p>
+            <p>Network: 16-unit hidden layer, sigmoid output.</p>
             
             <div class="metric-box">
                 <div class="metric-label">Training Samples:</div>
@@ -407,17 +382,17 @@
             </div>
             
             <button id="trainBtn" class="btn btn-success" disabled>
-                <i class="fas fa-play"></i> Train Model (50 epochs)
+                <i class="fas fa-play"></i> Train Model (30 epochs)
             </button>
             
             <div id="trainingStatus" class="status">
-                Model ready for training after data is loaded.
+                Load data to enable training.
             </div>
             
             <div id="modelSummary"></div>
         </section>
 
-        <!-- Metrics Section -->
+        <!-- Section 5: Metrics -->
         <section class="card">
             <h2 class="card-title"><i class="fas fa-chart-line"></i> 5. Metrics & Evaluation</h2>
             
@@ -427,12 +402,12 @@
             </div>
             
             <div class="slider-container">
-                <label for="thresholdSlider"><strong>Classification Threshold:</strong> <span id="thresholdValue">0.5</span></label>
+                <label><strong>Threshold:</strong> <span id="thresholdValue">0.5</span></label>
                 <input type="range" min="0" max="1" step="0.01" value="0.5" class="slider" id="thresholdSlider">
             </div>
             
             <div id="confusionMatrix" class="confusion-matrix">
-                <!-- Filled by JavaScript -->
+                <!-- Filled dynamically -->
             </div>
             
             <div class="metric-box">
@@ -457,54 +432,49 @@
             <div id="rocContainer"></div>
         </section>
 
-        <!-- Feature Importance Section -->
+        <!-- Section 6: Feature Importance -->
         <section class="card">
             <h2 class="card-title"><i class="fas fa-star"></i> 6. Feature Importance</h2>
-            <p>Learned feature importance from sigmoid gate (if enabled):</p>
-            <div id="featureImportance" class="feature-importance">
-                <!-- Filled by JavaScript -->
+            <div id="featureImportance">
+                <p>Feature importance will appear after training.</p>
             </div>
         </section>
 
-        <!-- Prediction & Export Section -->
+        <!-- Section 7: Prediction & Export -->
         <section class="card">
             <h2 class="card-title"><i class="fas fa-rocket"></i> 7. Prediction & Export</h2>
             
             <button id="predictBtn" class="btn" disabled>
-                <i class="fas fa-bolt"></i> Generate Predictions on Test Set
+                <i class="fas fa-bolt"></i> Generate Predictions
             </button>
             
             <div id="predictionStatus" class="status">
-                Predictions will appear here after training and evaluation.
+                Train and evaluate model first.
             </div>
             
-            <div style="margin-top: 20px;">
-                <button id="exportSubmissionBtn" class="btn btn-secondary" disabled>
-                    <i class="fas fa-file-csv"></i> Download submission.csv
+            <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
+                <button id="exportSubmissionBtn" class="btn" disabled>
+                    <i class="fas fa-file-csv"></i> submission.csv
                 </button>
                 
-                <button id="exportProbabilitiesBtn" class="btn btn-secondary" disabled>
-                    <i class="fas fa-file-csv"></i> Download probabilities.csv
+                <button id="exportProbabilitiesBtn" class="btn" disabled>
+                    <i class="fas fa-file-csv"></i> probabilities.csv
                 </button>
                 
-                <button id="exportModelBtn" class="btn btn-secondary" disabled>
-                    <i class="fas fa-download"></i> Download Trained Model
+                <button id="exportModelBtn" class="btn" disabled>
+                    <i class="fas fa-download"></i> Download Model
                 </button>
             </div>
         </section>
 
         <footer>
-            <p>Titanic Binary Classifier | Built with TensorFlow.js | Designed for GitHub Pages Deployment</p>
-            <p>All processing happens locally in your browser • No data is sent to any server</p>
-            <p>To use with your own CSV dataset, modify the schema mapping in app.js</p>
+            <p>Titanic Binary Classifier | TensorFlow.js | Complete Browser-Based ML</p>
+            <p>All processing happens locally • No data leaves your browser</p>
         </footer>
     </div>
 
-    <!-- TensorFlow.js and dependencies -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-vis@latest"></script>
-    
-    <!-- Application logic -->
     <script src="app.js"></script>
 </body>
 </html>
