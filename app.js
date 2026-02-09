@@ -599,24 +599,34 @@ function createModel(inputShape) {
     const useFeatureGate = document.getElementById('useFeatureGate').checked;
     
     if (useFeatureGate) {
+        // Feature gate layer must have inputShape
         model.add(tf.layers.dense({
             units: inputShape,
             activation: 'sigmoid',
             useBias: false,
             kernelInitializer: 'ones',
             trainable: true,
+            inputShape: [inputShape], // FIX: Added inputShape
             name: 'feature_gate'
         }));
+        
+        // Main model architecture
+        model.add(tf.layers.dense({
+            units: 16,
+            activation: 'relu',
+            kernelInitializer: 'heNormal',
+            name: 'hidden'
+        }));
+    } else {
+        // Without feature gate, first layer needs inputShape
+        model.add(tf.layers.dense({
+            units: 16,
+            activation: 'relu',
+            inputShape: [inputShape], // FIX: Added inputShape here too
+            kernelInitializer: 'heNormal',
+            name: 'hidden'
+        }));
     }
-    
-    // Main model architecture
-    model.add(tf.layers.dense({
-        units: 16,
-        activation: 'relu',
-        inputShape: [inputShape],
-        kernelInitializer: 'heNormal',
-        name: 'hidden'
-    }));
     
     model.add(tf.layers.dense({
         units: 1,
@@ -635,9 +645,9 @@ function createModel(inputShape) {
     document.getElementById('modelSummary').innerHTML = `
         <h3>Model Architecture</h3>
         <p>Input shape: [${inputShape}]</p>
-        <p>Layers: ${model.layers.length}</p>
         <p>Total parameters: ${model.countParams().toLocaleString()}</p>
         <p><small>${useFeatureGate ? 'With' : 'Without'} feature importance gate</small></p>
+        <p><small>Layers: ${model.layers.map(l => l.name).join(' → ')}</small></p>
     `;
     
     return model;
@@ -648,9 +658,17 @@ async function trainModel() {
         // Preprocess data first
         const processedData = preprocessData();
         
+        // Check if we have features
+        if (!processedData.features || processedData.features.length === 0) {
+            throw new Error('No features available after preprocessing');
+        }
+        
         // Create tensors
         const featuresTensor = tf.tensor2d(processedData.features);
         const labelsTensor = tf.tensor2d(processedData.labels, [processedData.labels.length, 1]);
+        
+        console.log(`Feature tensor shape: ${featuresTensor.shape}`);
+        console.log(`Label tensor shape: ${labelsTensor.shape}`);
         
         // Create validation split
         const splitIndex = Math.floor(featuresTensor.shape[0] * 0.8);
@@ -662,7 +680,7 @@ async function trainModel() {
         
         appState.validationData = { xVal, yVal };
         
-        // Create and train model
+        // Create and train model - pass correct input shape
         appState.model = createModel(featuresTensor.shape[1]);
         
         updateStatus('trainingStatus', 'Training started...', 'info');
@@ -693,6 +711,8 @@ async function trainModel() {
         // Cleanup tensors
         featuresTensor.dispose();
         labelsTensor.dispose();
+        xTrain.dispose();
+        yTrain.dispose();
         
         updateStatus('trainingStatus', 'Training completed successfully!', 'success');
         
@@ -706,6 +726,53 @@ async function trainModel() {
         updateStatus('trainingStatus', `Training failed: ${error.message}`, 'error');
         console.error('Training error:', error);
     }
+}
+
+function preprocessData() {
+    if (!appState.rawTrainData) {
+        throw new Error('No training data available');
+    }
+    
+    // Calculate statistics from training data
+    calculateFeatureStatistics();
+    
+    // Process training data
+    const processedTrain = processDataset(appState.rawTrainData, true);
+    appState.processedTrainData = processedTrain;
+    
+    // Process test data if available
+    if (appState.rawTestData && appState.rawTestData.length > 0) {
+        const processedTest = processDataset(appState.rawTestData, false);
+        appState.processedTestData = processedTest;
+    }
+    
+    // Debug logging
+    console.log('Processed training data:', {
+        numSamples: processedTrain.features.length,
+        numFeatures: processedTrain.features[0] ? processedTrain.features[0].length : 0,
+        featureNames: processedTrain.featureNames,
+        sampleFeatures: processedTrain.features[0]
+    });
+    
+    // Update UI
+    document.getElementById('trainSamples').textContent = processedTrain.features.length;
+    document.getElementById('valSamples').textContent = Math.floor(processedTrain.features.length * 0.2);
+    
+    // Show feature information
+    document.getElementById('featureList').innerHTML = `
+        <h3>Processed Features (${processedTrain.featureNames.length})</h3>
+        <p><small>${processedTrain.featureNames.join(', ')}</small></p>
+        <div class="metric-box">
+            <div class="metric-label">Feature Tensor Shape:</div>
+            <div class="metric-value">[${processedTrain.features.length}, ${processedTrain.featureNames.length}]</div>
+        </div>
+    `;
+    
+    updateStatus('preprocessStatus', 
+        `Preprocessed ${processedTrain.features.length} samples with ${processedTrain.featureNames.length} features`, 
+        'success');
+    
+    return processedTrain;
 }
 
 // ============================================================================
