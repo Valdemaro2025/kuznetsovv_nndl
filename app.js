@@ -1100,7 +1100,7 @@ function displayFeatureImportance() {
         if (!gateLayer) {
             container.innerHTML = `
                 <h3>Feature Importance</h3>
-                <p class="status error">Feature gate layer not found in model. Please retrain model with feature gate enabled.</p>
+                <p class="status error">Feature gate layer not found in model.</p>
             `;
             return;
         }
@@ -1115,45 +1115,60 @@ function displayFeatureImportance() {
             return;
         }
         
-        // Get the kernel weights (should be inputShape x inputShape)
+        // The weights are the kernel matrix (inputShape x inputShape)
+        // For a diagonal gate, we should look at the diagonal elements
         const kernel = weights[0];
         console.log('Feature gate kernel shape:', kernel.shape);
         
-        // For diagonal feature gate, we want the diagonal elements
+        // Extract diagonal elements
         const importanceValues = [];
+        const kernelData = Array.from(kernel.dataSync());
         
         if (kernel.shape[0] === kernel.shape[1]) {
-            // Square matrix - get diagonal
+            // Square matrix - extract diagonal
             for (let i = 0; i < kernel.shape[0]; i++) {
-                importanceValues.push(kernel.dataSync()[i * kernel.shape[1] + i]);
+                importanceValues.push(kernelData[i * kernel.shape[1] + i]);
             }
         } else {
-            // Not square - take first row or column
-            const values = Array.from(kernel.dataSync());
-            importanceValues.push(...values.slice(0, Math.min(values.length, appState.featureNames.length)));
+            // Not square - take first row or flatten
+            const minDim = Math.min(kernel.shape[0], kernel.shape[1]);
+            for (let i = 0; i < minDim; i++) {
+                importanceValues.push(kernelData[i]);
+            }
         }
         
-        console.log('Extracted importance values:', importanceValues.length);
-        console.log('Expected feature names:', appState.featureNames.length);
+        console.log('Importance values (raw):', importanceValues);
+        
+        // Apply sigmoid activation to get importance scores between 0 and 1
+        const sigmoid = (x) => 1 / (1 + Math.exp(-x));
+        const activatedImportance = importanceValues.map(sigmoid);
+        
+        console.log('Importance values (sigmoid):', activatedImportance);
         
         // Match with feature names
         const featureImportance = [];
-        const minLength = Math.min(importanceValues.length, appState.featureNames.length);
+        const minLength = Math.min(activatedImportance.length, appState.featureNames.length);
         
         for (let i = 0; i < minLength; i++) {
             featureImportance.push({
                 name: appState.featureNames[i] || `Feature_${i}`,
-                importance: Math.abs(importanceValues[i]), // Use absolute value
-                rawValue: importanceValues[i]
+                importance: activatedImportance[i],
+                rawValue: importanceValues[i],
+                rank: i + 1
             });
         }
         
-        // Sort by importance
+        // Sort by importance (descending)
         featureImportance.sort((a, b) => b.importance - a.importance);
         
+        // Update ranks after sorting
+        featureImportance.forEach((f, idx) => {
+            f.rank = idx + 1;
+        });
+        
         // Display
-        let html = '<h3>Feature Importance</h3>';
-        html += '<p>Learnable sigmoid gate importance scores:</p>';
+        let html = '<h3>Feature Importance (Sigmoid Gate)</h3>';
+        html += '<p>Importance scores after sigmoid activation (0-1 scale):</p>';
         
         if (featureImportance.length === 0) {
             html += '<p class="status error">No feature importance data available.</p>';
@@ -1161,37 +1176,75 @@ function displayFeatureImportance() {
             return;
         }
         
-        // Find max for normalization
-        const maxImportance = Math.max(...featureImportance.map(f => f.importance));
+        // Create table for better readability
+        html += `
+            <div style="overflow-x: auto; margin: 15px 0;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 0.9em;">
+                    <thead>
+                        <tr style="background: rgba(68, 138, 255, 0.2);">
+                            <th style="padding: 8px; text-align: left; width: 40px;">Rank</th>
+                            <th style="padding: 8px; text-align: left;">Feature</th>
+                            <th style="padding: 8px; text-align: left; width: 80px;">Score</th>
+                            <th style="padding: 8px; text-align: left; width: 120px;">Importance</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
         
-        // Display top features
-        featureImportance.slice(0, 15).forEach((feature, idx) => {
-            const percentage = maxImportance > 0 ? (feature.importance / maxImportance) * 100 : 0;
+        featureImportance.forEach((feature, idx) => {
+            const percentage = Math.round(feature.importance * 100);
+            const barWidth = Math.max(20, percentage); // Minimum 20px for visibility
             
             html += `
-                <div style="margin: 8px 0;">
-                    <div style="display: flex; justify-content: space-between; font-size: 0.9em;">
-                        <span>${feature.name}</span>
-                        <span style="font-weight: bold; color: #448aff;">${feature.rawValue.toFixed(3)}</span>
-                    </div>
-                    <div style="height: 6px; background: rgba(255, 255, 255, 0.1); border-radius: 3px; overflow: hidden; margin-top: 3px;">
-                        <div style="height: 100%; width: ${percentage}%; 
-                            background: linear-gradient(90deg, #448aff, #82b1ff);"></div>
-                    </div>
-                </div>
+                <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.1);">
+                    <td style="padding: 8px; text-align: center; font-weight: bold; color: #448aff;">${feature.rank}</td>
+                    <td style="padding: 8px;">${feature.name}</td>
+                    <td style="padding: 8px; font-family: monospace; color: #82b1ff;">${feature.importance.toFixed(3)}</td>
+                    <td style="padding: 8px;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <div style="width: ${barWidth}px; height: 8px; background: linear-gradient(90deg, #448aff, #82b1ff); border-radius: 4px;"></div>
+                            <span style="font-size: 0.85em;">${percentage}%</span>
+                        </div>
+                    </td>
+                </tr>
             `;
         });
         
-        // Show total features count
         html += `
-            <div style="margin-top: 15px; padding: 10px; background: rgba(68, 138, 255, 0.1); border-radius: 6px; font-size: 0.9em;">
-                <div style="display: flex; justify-content: space-between;">
-                    <span>Features analyzed:</span>
-                    <span>${featureImportance.length} of ${appState.featureNames.length}</span>
+                    </tbody>
+                </table>
+            </div>
+        `;
+        
+        // Add statistics
+        const avgImportance = featureImportance.reduce((sum, f) => sum + f.importance, 0) / featureImportance.length;
+        const stdImportance = Math.sqrt(
+            featureImportance.reduce((sum, f) => sum + Math.pow(f.importance - avgImportance, 2), 0) / featureImportance.length
+        );
+        
+        html += `
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 15px;">
+                <div style="padding: 10px; background: rgba(68, 138, 255, 0.1); border-radius: 6px;">
+                    <div style="font-size: 0.85em; color: #bbdefb;">Total Features</div>
+                    <div style="font-size: 1.2em; font-weight: bold; color: #82b1ff;">${featureImportance.length}</div>
                 </div>
-                <div style="display: flex; justify-content: space-between; margin-top: 5px;">
-                    <span>Most important:</span>
-                    <span style="font-weight: bold;">${featureImportance[0].name} (${featureImportance[0].rawValue.toFixed(3)})</span>
+                <div style="padding: 10px; background: rgba(68, 138, 255, 0.1); border-radius: 6px;">
+                    <div style="font-size: 0.85em; color: #bbdefb;">Avg Importance</div>
+                    <div style="font-size: 1.2em; font-weight: bold; color: #82b1ff;">${avgImportance.toFixed(3)}</div>
+                </div>
+                <div style="padding: 10px; background: rgba(68, 138, 255, 0.1); border-radius: 6px;">
+                    <div style="font-size: 0.85em; color: #bbdefb;">Std Dev</div>
+                    <div style="font-size: 1.2em; font-weight: bold; color: #82b1ff;">${stdImportance.toFixed(3)}</div>
+                </div>
+            </div>
+            
+            <div style="margin-top: 15px; padding: 12px; background: rgba(105, 240, 174, 0.1); border-radius: 6px; border-left: 4px solid #69f0ae;">
+                <div style="font-weight: bold; margin-bottom: 5px;">Interpretation:</div>
+                <div style="font-size: 0.9em; color: #bbdefb;">
+                    • Scores close to 1: Feature is very important for prediction<br>
+                    • Scores close to 0.5: Feature has moderate importance<br>
+                    • Scores close to 0: Feature is less important (may be redundant)<br>
+                    • All scores are normalized between 0 and 1 using sigmoid function
                 </div>
             </div>
         `;
@@ -1202,8 +1255,8 @@ function displayFeatureImportance() {
         console.error('Feature importance error:', error);
         container.innerHTML = `
             <h3>Feature Importance</h3>
-            <p class="status error">Error: ${error.message}</p>
-            <p>Try disabling feature gate in preprocessing and retraining.</p>
+            <p class="status error">Error calculating feature importance: ${error.message}</p>
+            <p style="font-size: 0.9em; margin-top: 10px;">Try retraining the model or disable feature gate.</p>
         `;
     }
 }
