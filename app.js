@@ -430,6 +430,15 @@ function preprocessData() {
         `Preprocessed ${processedTrain.features.length} samples with ${appState.featureNames.length} features`, 
         'success');
     
+   // Debug logging
+    console.log('=== PREPROCESSING DEBUG INFO ===');
+    console.log('Training samples:', processedTrain.features.length);
+    console.log('Feature count per sample:', processedTrain.features[0]?.length || 0);
+    console.log('Feature names:', processedTrain.featureNames);
+    console.log('First sample features:', processedTrain.features[0]);
+    console.log('Feature names count:', processedTrain.featureNames.length);
+    console.log('===============================');
+    
     return processedTrain;
 }
 
@@ -448,22 +457,23 @@ function calculateFeatureStatistics() {
             const sorted = [...values].sort((a, b) => a - b);
             const median = sorted[Math.floor(sorted.length / 2)];
             
-            stats[feature] = { mean, std, median };
+            stats[feature] = { mean, std, median, type: 'numerical' };
         } else {
-            stats[feature] = { mean: 0, std: 1, median: 0 };
+            stats[feature] = { mean: 0, std: 1, median: 0, type: 'numerical' };
         }
     });
     
-    // Categorical features
+    // Categorical features - FIXED to collect all categories
     DATA_SCHEMA.categoricalFeatures.forEach(feature => {
         const values = data.map(row => row[feature])
             .filter(val => val !== null && val !== '');
         
         if (values.length > 0) {
-            // Count frequencies
+            // Count frequencies for ALL values
             const freq = {};
             values.forEach(val => {
-                freq[val] = (freq[val] || 0) + 1;
+                const key = String(val).trim();
+                freq[key] = (freq[key] || 0) + 1;
             });
             
             // Find mode (most common value)
@@ -476,13 +486,26 @@ function calculateFeatureStatistics() {
                 }
             });
             
-            stats[feature] = { mode, frequencies: freq };
+            stats[feature] = { 
+                mode, 
+                frequencies: freq,
+                categories: Object.keys(freq),
+                type: 'categorical' 
+            };
+            
+            console.log(`Categories for ${feature}:`, Object.keys(freq));
         } else {
-            stats[feature] = { mode: 'Unknown', frequencies: {} };
+            stats[feature] = { 
+                mode: 'Unknown', 
+                frequencies: {}, 
+                categories: [],
+                type: 'categorical' 
+            };
         }
     });
     
     appState.featureStats = stats;
+    console.log('Feature statistics:', stats);
 }
 
 function processDataset(data, isTraining) {
@@ -545,7 +568,7 @@ function processRow(row, isTraining) {
         featureNames.push(feature);
     });
     
-    // Process categorical features (one-hot encoding)
+    // Process categorical features - FIXED
     DATA_SCHEMA.categoricalFeatures.forEach(feature => {
         let value = row[feature];
         
@@ -554,24 +577,36 @@ function processRow(row, isTraining) {
             value = appState.featureStats[feature]?.mode || 'Unknown';
         }
         
-        // Get unique categories
+        // Get unique categories from training data stats
         const categories = Object.keys(appState.featureStats[feature]?.frequencies || {});
         
         if (categories.length > 0) {
-            // Create one-hot encoding
-            categories.forEach(category => {
+            // One-hot encoding for up to 5 most common categories
+            const topCategories = categories
+                .sort((a, b) => appState.featureStats[feature].frequencies[b] - appState.featureStats[feature].frequencies[a])
+                .slice(0, 5);
+            
+            topCategories.forEach(category => {
                 featureValues.push(category === value ? 1 : 0);
                 featureNames.push(`${feature}_${category}`);
             });
         } else {
-            // Simple binary encoding for known values
+            // Fallback for test data or unknown categories
             if (feature === 'Sex') {
                 featureValues.push(value === 'female' ? 1 : 0);
                 featureNames.push('Sex_female');
+            } else if (feature === 'Pclass') {
+                // One-hot for Pclass (1, 2, 3)
+                [1, 2, 3].forEach(cls => {
+                    featureValues.push(cls === value ? 1 : 0);
+                    featureNames.push(`Pclass_${cls}`);
+                });
             } else if (feature === 'Embarked') {
-                const encoded = value === 'C' ? 0 : value === 'Q' ? 0.5 : 1;
-                featureValues.push(encoded);
-                featureNames.push('Embarked_encoded');
+                // One-hot for Embarked (C, Q, S)
+                ['C', 'Q', 'S'].forEach(port => {
+                    featureValues.push(port === value ? 1 : 0);
+                    featureNames.push(`Embarked_${port}`);
+                });
             }
         }
     });
@@ -825,51 +860,79 @@ function evaluateModel() {
 }
 
 function calculateAUC(predictions, trueLabels) {
-    // Simplified AUC calculation for demo
-    const sorted = predictions.map((p, i) => ({ p, y: trueLabels[i] }))
-        .sort((a, b) => a.p - b.p);
+    // Ensure we have valid data
+    if (!predictions || !trueLabels || predictions.length !== trueLabels.length) {
+        console.error('Invalid data for AUC calculation');
+        return 0.5;
+    }
+    
+    // Create pairs and sort by prediction score (descending)
+    const pairs = predictions.map((p, i) => ({ score: p, label: trueLabels[i] }));
+    pairs.sort((a, b) => b.score - a.score);
+    
+    const totalPositives = pairs.filter(p => p.label === 1).length;
+    const totalNegatives = pairs.filter(p => p.label === 0).length;
+    
+    if (totalPositives === 0 || totalNegatives === 0) {
+        return 0.5; // Cannot calculate AUC
+    }
     
     let auc = 0;
-    let prevFalseRate = 0;
+    let truePositives = 0;
+    let falsePositives = 0;
     let prevTrueRate = 0;
-    let totalPositives = sorted.filter(d => d.y === 1).length;
-    let totalNegatives = sorted.filter(d => d.y === 0).length;
+    let prevFalseRate = 0;
     
-    if (totalPositives === 0 || totalNegatives === 0) return 0.5;
+    // Calculate ROC points for different thresholds
+    const thresholds = Array.from({ length: 101 }, (_, i) => i / 100);
     
-    for (let i = 0; i <= 100; i++) {
-        const threshold = i / 100;
+    thresholds.forEach(threshold => {
+        // Reset counts for each threshold
+        truePositives = 0;
+        falsePositives = 0;
         
-        let tp = 0, fp = 0;
-        sorted.forEach(d => {
-            if (d.p >= threshold) {
-                if (d.y === 1) tp++;
-                else fp++;
+        pairs.forEach(pair => {
+            if (pair.score >= threshold) {
+                if (pair.label === 1) truePositives++;
+                else falsePositives++;
             }
         });
         
-        const tpr = tp / totalPositives;
-        const fpr = fp / totalNegatives;
+        const trueRate = truePositives / totalPositives;
+        const falseRate = falsePositives / totalNegatives;
         
-        if (i > 0) {
-            auc += (fpr - prevFalseRate) * (tpr + prevTrueRate) / 2;
+        // Add trapezoid area
+        if (threshold > 0) {
+            auc += (falseRate - prevFalseRate) * (trueRate + prevTrueRate) / 2;
         }
         
-        prevFalseRate = fpr;
-        prevTrueRate = tpr;
-    }
+        prevTrueRate = trueRate;
+        prevFalseRate = falseRate;
+    });
     
-    return auc;
+    // AUC should be between 0 and 1
+    return Math.max(0, Math.min(1, auc));
 }
 
 function updateMetrics(threshold, predictions, trueLabels) {
     if (!predictions || !trueLabels) {
         if (!appState.validationData) return;
         
-        const preds = appState.model.predict(appState.validationData.xVal);
-        predictions = Array.from(preds.dataSync());
-        trueLabels = Array.from(appState.validationData.yVal.dataSync());
-        preds.dispose();
+        try {
+            const preds = appState.model.predict(appState.validationData.xVal);
+            predictions = Array.from(preds.dataSync());
+            trueLabels = Array.from(appState.validationData.yVal.dataSync());
+            preds.dispose();
+        } catch (error) {
+            console.error('Error getting predictions:', error);
+            return;
+        }
+    }
+    
+    // Validate data
+    if (predictions.length !== trueLabels.length) {
+        console.error('Predictions and labels length mismatch');
+        return;
     }
     
     // Calculate confusion matrix
@@ -901,7 +964,7 @@ function updateMetrics(threshold, predictions, trueLabels) {
     document.getElementById('confusionMatrix').innerHTML = matrixHTML;
     document.getElementById('thresholdValue').textContent = threshold.toFixed(2);
     
-    // Calculate metrics
+    // Calculate metrics with safe division
     const precision = tp + fp > 0 ? tp / (tp + fp) : 0;
     const recall = tp + fn > 0 ? tp / (tp + fn) : 0;
     const f1 = precision + recall > 0 ? 2 * (precision * recall) / (precision + recall) : 0;
@@ -1045,50 +1108,76 @@ function displayFeatureImportance() {
         const weights = gateLayer.getWeights()[0];
         const importanceValues = Array.from(weights.dataSync());
         
-        // Normalize importance scores (0 to 1)
-        const maxVal = Math.max(...importanceValues);
-        const minVal = Math.min(...importanceValues);
-        const normalized = importanceValues.map(val => 
-            maxVal !== minVal ? (val - minVal) / (maxVal - minVal) : 0.5
-        );
+        console.log('Importance values shape:', weights.shape);
+        console.log('Feature names length:', appState.featureNames.length);
+        console.log('Importance values:', importanceValues);
         
-        // Create feature importance display
-        let html = '<h3>Feature Importance (Sigmoid Gate)</h3>';
-        html += '<p>Higher values indicate more important features for prediction:</p>';
+        // Check if dimensions match
+        if (importanceValues.length !== appState.featureNames.length) {
+            container.innerHTML = `
+                <h3>Feature Importance</h3>
+                <p class="status error">
+                    Dimension mismatch: ${importanceValues.length} importance values vs ${appState.featureNames.length} features.
+                    Try disabling and re-enabling feature gate.
+                </p>
+            `;
+            return;
+        }
         
-        // Create bars for each feature
-        normalized.forEach((importance, index) => {
-            const featureName = appState.featureNames[index] || `Feature ${index + 1}`;
-            const rawValue = importanceValues[index].toFixed(3);
-            const percentage = Math.round(importance * 100);
+        // Create array of feature objects with importance
+        const featuresWithImportance = appState.featureNames.map((name, index) => ({
+            name,
+            importance: importanceValues[index],
+            index
+        }));
+        
+        // Sort by importance (descending)
+        featuresWithImportance.sort((a, b) => b.importance - a.importance);
+        
+        // Display top 20 features
+        let html = '<h3>Top Feature Importance (Sigmoid Gate)</h3>';
+        html += '<p>Higher values indicate more important features:</p>';
+        
+        // Create bars for top features
+        const topFeatures = featuresWithImportance.slice(0, 20);
+        const maxImportance = Math.max(...topFeatures.map(f => f.importance));
+        
+        topFeatures.forEach((feature, idx) => {
+            const percentage = maxImportance > 0 ? (feature.importance / maxImportance) * 100 : 0;
             
             html += `
-                <div style="margin: 8px 0;">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                        <span style="font-size: 0.9em;">${featureName}</span>
-                        <span style="font-weight: bold; color: #82b1ff;">${rawValue}</span>
+                <div style="margin: 6px 0;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+                        <span style="font-size: 0.85em;">
+                            ${idx + 1}. ${feature.name.length > 30 ? feature.name.substring(0, 30) + '...' : feature.name}
+                        </span>
+                        <span style="font-size: 0.85em; font-weight: bold; color: #82b1ff;">
+                            ${feature.importance.toFixed(3)}
+                        </span>
                     </div>
-                    <div style="height: 10px; background: rgba(255, 255, 255, 0.1); border-radius: 5px; overflow: hidden;">
+                    <div style="height: 8px; background: rgba(255, 255, 255, 0.1); border-radius: 4px; overflow: hidden;">
                         <div style="height: 100%; width: ${percentage}%; 
                             background: linear-gradient(90deg, #448aff, #82b1ff); 
-                            border-radius: 5px;"></div>
+                            border-radius: 4px;"></div>
                     </div>
                 </div>
             `;
         });
         
-        // Add summary statistics
-        const avgImportance = (normalized.reduce((a, b) => a + b, 0) / normalized.length).toFixed(3);
-        
+        // Add summary
         html += `
             <div style="margin-top: 15px; padding: 10px; background: rgba(68, 138, 255, 0.1); border-radius: 6px;">
                 <div style="display: flex; justify-content: space-between;">
-                    <span>Average importance:</span>
-                    <span style="font-weight: bold;">${avgImportance}</span>
+                    <span>Total features analyzed:</span>
+                    <span style="font-weight: bold;">${appState.featureNames.length}</span>
                 </div>
                 <div style="display: flex; justify-content: space-between; margin-top: 5px;">
-                    <span>Most important feature:</span>
-                    <span style="font-weight: bold;">${appState.featureNames[normalized.indexOf(Math.max(...normalized))]}</span>
+                    <span>Most important:</span>
+                    <span style="font-weight: bold;">${featuresWithImportance[0].name}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-top: 5px;">
+                    <span>Least important:</span>
+                    <span style="font-weight: bold;">${featuresWithImportance[featuresWithImportance.length - 1].name}</span>
                 </div>
             </div>
         `;
@@ -1099,7 +1188,7 @@ function displayFeatureImportance() {
         console.error('Error displaying feature importance:', error);
         container.innerHTML = `
             <h3>Feature Importance</h3>
-            <p class="status error">Error displaying feature importance: ${error.message}</p>
+            <p class="status error">Error: ${error.message}</p>
         `;
     }
 }
