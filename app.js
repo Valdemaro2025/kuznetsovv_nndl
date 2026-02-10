@@ -634,17 +634,20 @@ function createModel(inputShape) {
     const useFeatureGate = document.getElementById('useFeatureGate').checked;
     
     if (useFeatureGate) {
-        console.log('Creating model WITH feature gate');
-        // Feature gate should have inputShape units
+        // ВАЖНО: Создаем правильный gate слой
+        // Используем dense слой который умножает вход на обучаемые веса
         model.add(tf.layers.dense({
-            units: inputShape, // Количество единиц должно совпадать с количеством признаков
-            activation: 'sigmoid',
-            useBias: false,
-            kernelInitializer: 'ones',
-            trainable: true,
+            units: inputShape, // Выход такой же размерности как вход
+            activation: 'sigmoid', // Активация sigmoid гарантирует 0-1
+            useBias: false, // Без смещения
+            kernelInitializer: 'ones', // Инициализируем единицами
+            kernelConstraint: tf.constraints.minMaxNorm({minValue: 0, maxValue: 1}), // Ограничиваем веса
             inputShape: [inputShape],
             name: 'feature_gate'
         }));
+        
+        // Multiply layer для element-wise умножения
+        model.add(tf.layers.multiply({name: 'gate_multiply'}));
         
         // Hidden layer
         model.add(tf.layers.dense({
@@ -654,8 +657,7 @@ function createModel(inputShape) {
             name: 'hidden'
         }));
     } else {
-        console.log('Creating model WITHOUT feature gate');
-        // Without feature gate
+        // Без feature gate
         model.add(tf.layers.dense({
             units: 16,
             activation: 'relu',
@@ -679,18 +681,7 @@ function createModel(inputShape) {
         metrics: ['accuracy']
     });
     
-    console.log('Model created successfully');
-    console.log('Model layers:', model.layers.map(l => `${l.name}: ${l.outputShape}`));
-    
-    // Display model summary
-    document.getElementById('modelSummary').innerHTML = `
-        <h3>Model Architecture</h3>
-        <p>Input features: ${inputShape}</p>
-        <p>Hidden units: 16</p>
-        <p>Feature gate: ${useFeatureGate ? 'Enabled' : 'Disabled'}</p>
-        <p>Total parameters: ${model.countParams().toLocaleString()}</p>
-    `;
-    
+    console.log('Model created. Layers:', model.layers.map(l => l.name));
     return model;
 }
 
