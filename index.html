@@ -216,6 +216,13 @@
             font-weight: bold;
         }
 
+        .confusion-header {
+            padding: 12px;
+            font-weight: bold;
+            background: rgba(68, 138, 255, 0.2);
+            border-radius: 6px;
+        }
+
         .true-negative { background: rgba(105, 240, 174, 0.3); }
         .false-positive { background: rgba(255, 82, 82, 0.3); }
         .false-negative { background: rgba(255, 82, 82, 0.3); }
@@ -356,7 +363,7 @@
                     <input type="checkbox" id="useFeatureGate" checked>
                     <span class="toggle-slider"></span>
                 </label>
-                <span>Enable feature importance learning</span>
+                <span>Enable feature importance learning (Sigmoid gate)</span>
             </div>
             
             <div id="preprocessStatus" class="status">
@@ -369,7 +376,7 @@
         <!-- Section 4: Model & Training -->
         <section class="card">
             <h2 class="card-title"><i class="fas fa-brain"></i> 4. Model & Training</h2>
-            <p>Network: 16-unit hidden layer, sigmoid output.</p>
+            <p>Network: Sigmoid gate layer + 16-unit hidden layer, sigmoid output.</p>
             
             <div class="metric-box">
                 <div class="metric-label">Training Samples:</div>
@@ -382,7 +389,7 @@
             </div>
             
             <button id="trainBtn" class="btn btn-success" disabled>
-                <i class="fas fa-play"></i> Train Model (30 epochs)
+                <i class="fas fa-play"></i> Train Model (50 epochs)
             </button>
             
             <div id="trainingStatus" class="status">
@@ -397,17 +404,32 @@
             <h2 class="card-title"><i class="fas fa-chart-line"></i> 5. Metrics & Evaluation</h2>
             
             <div class="metric-box">
+                <div class="metric-label">Accuracy:</div>
+                <div id="accuracy" class="metric-value">-</div>
+            </div>
+            
+            <div class="metric-box">
                 <div class="metric-label">AUC Score:</div>
                 <div id="aucScore" class="metric-value">-</div>
             </div>
             
             <div class="slider-container">
                 <label><strong>Threshold:</strong> <span id="thresholdValue">0.5</span></label>
-                <input type="range" min="0" max="1" step="0.01" value="0.5" class="slider" id="thresholdSlider">
+                <input type="range" min="0" max="1" step="0.01" value="0.5" class="slider" id="thresholdSlider" disabled>
             </div>
             
+            <h4 style="margin-top: 15px; color: #82b1ff;">Confusion Matrix</h4>
             <div id="confusionMatrix" class="confusion-matrix">
                 <!-- Filled dynamically -->
+                <div class="confusion-header"></div>
+                <div class="confusion-header">Predicted Positive</div>
+                <div class="confusion-header">Predicted Negative</div>
+                <div class="confusion-header">Actual Positive</div>
+                <div class="confusion-cell true-positive">-</div>
+                <div class="confusion-cell false-negative">-</div>
+                <div class="confusion-header">Actual Negative</div>
+                <div class="confusion-cell false-positive">-</div>
+                <div class="confusion-cell true-negative">-</div>
             </div>
             
             <div class="metric-box">
@@ -428,15 +450,13 @@
             <button id="evaluateBtn" class="btn" disabled>
                 <i class="fas fa-chart-bar"></i> Evaluate Model
             </button>
-            
-            <div id="rocContainer"></div>
         </section>
 
         <!-- Section 6: Feature Importance -->
         <section class="card">
             <h2 class="card-title"><i class="fas fa-star"></i> 6. Feature Importance</h2>
             <div id="featureImportance">
-                <p>Feature importance will appear after training.</p>
+                <p>Feature importance will appear after training (if sigmoid gate enabled).</p>
             </div>
         </section>
 
