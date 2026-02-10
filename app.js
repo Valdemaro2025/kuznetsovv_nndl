@@ -628,15 +628,16 @@ function processRow(row, isTraining) {
 // ============================================================================
 
 function createModel(inputShape) {
-    const model = tf.sequential();
+    console.log('Creating model with input shape:', inputShape);
     
-    // Optional feature gate layer
+    const model = tf.sequential();
     const useFeatureGate = document.getElementById('useFeatureGate').checked;
     
     if (useFeatureGate) {
-        // Feature gate layer must have inputShape
+        console.log('Creating model WITH feature gate');
+        // Feature gate should have inputShape units
         model.add(tf.layers.dense({
-            units: inputShape,
+            units: inputShape, // Количество единиц должно совпадать с количеством признаков
             activation: 'sigmoid',
             useBias: false,
             kernelInitializer: 'ones',
@@ -645,7 +646,7 @@ function createModel(inputShape) {
             name: 'feature_gate'
         }));
         
-        // Main model architecture
+        // Hidden layer
         model.add(tf.layers.dense({
             units: 16,
             activation: 'relu',
@@ -653,7 +654,8 @@ function createModel(inputShape) {
             name: 'hidden'
         }));
     } else {
-        // Without feature gate, first layer needs inputShape
+        console.log('Creating model WITHOUT feature gate');
+        // Without feature gate
         model.add(tf.layers.dense({
             units: 16,
             activation: 'relu',
@@ -663,6 +665,7 @@ function createModel(inputShape) {
         }));
     }
     
+    // Output layer
     model.add(tf.layers.dense({
         units: 1,
         activation: 'sigmoid',
@@ -676,16 +679,16 @@ function createModel(inputShape) {
         metrics: ['accuracy']
     });
     
-    // Store model reference in app state
-    appState.model = model;
+    console.log('Model created successfully');
+    console.log('Model layers:', model.layers.map(l => `${l.name}: ${l.outputShape}`));
     
     // Display model summary
     document.getElementById('modelSummary').innerHTML = `
         <h3>Model Architecture</h3>
-        <p>Input shape: [${inputShape}]</p>
+        <p>Input features: ${inputShape}</p>
+        <p>Hidden units: 16</p>
+        <p>Feature gate: ${useFeatureGate ? 'Enabled' : 'Disabled'}</p>
         <p>Total parameters: ${model.countParams().toLocaleString()}</p>
-        <p><small>${useFeatureGate ? 'With' : 'Without'} feature importance gate</small></p>
-        <p><small>Layers: ${model.layers.map(l => l.name).join(' → ')}</small></p>
     `;
     
     return model;
@@ -696,17 +699,20 @@ async function trainModel() {
         // Preprocess data first
         const processedData = preprocessData();
         
-        // Check if we have features
+        // Validate data
         if (!processedData.features || processedData.features.length === 0) {
             throw new Error('No features available after preprocessing');
         }
+        
+        const numFeatures = processedData.features[0].length;
+        console.log(`Training with ${processedData.features.length} samples, ${numFeatures} features`);
         
         // Create tensors
         const featuresTensor = tf.tensor2d(processedData.features);
         const labelsTensor = tf.tensor2d(processedData.labels, [processedData.labels.length, 1]);
         
-        console.log(`Feature tensor shape: ${featuresTensor.shape}`);
-        console.log(`Label tensor shape: ${labelsTensor.shape}`);
+        console.log('Feature tensor shape:', featuresTensor.shape);
+        console.log('Label tensor shape:', labelsTensor.shape);
         
         // Create validation split
         const splitIndex = Math.floor(featuresTensor.shape[0] * 0.8);
@@ -718,12 +724,13 @@ async function trainModel() {
         
         appState.validationData = { xVal, yVal };
         
-        // Create and train model - pass correct input shape
-        appState.model = createModel(featuresTensor.shape[1]);
+        // Create model with correct input shape
+        appState.model = createModel(numFeatures);
         
         updateStatus('trainingStatus', 'Training started...', 'info');
         
-        const history = await appState.model.fit(xTrain, yTrain, {
+        // Train model
+        await appState.model.fit(xTrain, yTrain, {
             epochs: 30,
             batchSize: 32,
             validationData: [xVal, yVal],
@@ -732,43 +739,28 @@ async function trainModel() {
                 onEpochEnd: (epoch, logs) => {
                     const progress = Math.round((epoch + 1) / 30 * 100);
                     updateStatus('trainingStatus', 
-                        `Epoch ${epoch + 1}/30 (${progress}%) - Loss: ${logs.loss.toFixed(4)}, Val Loss: ${logs.val_loss.toFixed(4)}`, 
+                        `Epoch ${epoch + 1}/30 - Loss: ${logs.loss.toFixed(4)}, Acc: ${(logs.acc * 100).toFixed(1)}%`, 
                         'success');
-                    
-                    appState.trainingHistory.push({
-                        epoch: epoch + 1,
-                        loss: logs.loss,
-                        val_loss: logs.val_loss,
-                        acc: logs.acc,
-                        val_acc: logs.val_acc
-                    });
                 },
                 onTrainEnd: () => {
-                    // Display feature importance after training
-                    setTimeout(() => {
-                        displayFeatureImportance();
-                    }, 100);
+                    console.log('Training completed successfully');
+                    console.log('Model summary:', appState.model.summary());
                 }
             }
         });
         
-        // Cleanup tensors
-        featuresTensor.dispose();
-        labelsTensor.dispose();
-        xTrain.dispose();
-        yTrain.dispose();
+        // Cleanup
+        [featuresTensor, labelsTensor, xTrain, yTrain].forEach(t => t.dispose());
         
-        updateStatus('trainingStatus', 'Training completed successfully!', 'success');
+        updateStatus('trainingStatus', 'Training completed! Click "Evaluate Model" for metrics.', 'success');
         
-        // Enable evaluation and export buttons
+        // Enable buttons
         document.getElementById('evaluateBtn').disabled = false;
         document.getElementById('exportModelBtn').disabled = false;
         
-        return history;
-        
     } catch (error) {
         updateStatus('trainingStatus', `Training failed: ${error.message}`, 'error');
-        console.error('Training error:', error);
+        console.error('Training error details:', error);
     }
 }
 
@@ -837,17 +829,28 @@ function evaluateModel() {
         const predValues = Array.from(predictions.dataSync());
         const trueValues = Array.from(yVal.dataSync());
         
-        // Calculate initial metrics with threshold 0.5
-        updateMetrics(0.5, predValues, trueValues);
+        console.log('Evaluation predictions:', {
+            count: predValues.length,
+            sample: predValues.slice(0, 5),
+            trueSample: trueValues.slice(0, 5)
+        });
         
-        // Calculate AUC (simplified for demo)
+        // Calculate AUC
         const auc = calculateAUC(predValues, trueValues);
         document.getElementById('aucScore').textContent = auc.toFixed(3);
         
-        // Display feature importance if gate is enabled
-        displayFeatureImportance();
+        // Update metrics with threshold 0.5
+        updateMetrics(0.5, predValues, trueValues);
         
-        updateStatus('loadStatus', 'Evaluation completed. Adjust threshold slider.', 'success');
+        // Display feature importance if gate is enabled
+        const useFeatureGate = document.getElementById('useFeatureGate').checked;
+        if (useFeatureGate) {
+            setTimeout(() => {
+                displayFeatureImportance();
+            }, 500);
+        }
+        
+        updateStatus('loadStatus', `Evaluation completed. AUC: ${auc.toFixed(3)}`, 'success');
         
         // Enable prediction button
         document.getElementById('predictBtn').disabled = false;
@@ -856,61 +859,59 @@ function evaluateModel() {
         
     } catch (error) {
         updateStatus('loadStatus', `Evaluation failed: ${error.message}`, 'error');
+        console.error('Evaluation error:', error);
     }
 }
 
 function calculateAUC(predictions, trueLabels) {
-    // Ensure we have valid data
-    if (!predictions || !trueLabels || predictions.length !== trueLabels.length) {
-        console.error('Invalid data for AUC calculation');
+    if (!predictions || !trueLabels || predictions.length === 0 || predictions.length !== trueLabels.length) {
+        console.warn('Invalid data for AUC calculation');
         return 0.5;
     }
     
-    // Create pairs and sort by prediction score (descending)
+    // Create pairs
     const pairs = predictions.map((p, i) => ({ score: p, label: trueLabels[i] }));
+    
+    // Sort by score (descending)
     pairs.sort((a, b) => b.score - a.score);
     
     const totalPositives = pairs.filter(p => p.label === 1).length;
     const totalNegatives = pairs.filter(p => p.label === 0).length;
     
     if (totalPositives === 0 || totalNegatives === 0) {
-        return 0.5; // Cannot calculate AUC
+        console.warn('Cannot calculate AUC: need both positive and negative samples');
+        return 0.5;
     }
     
+    // Calculate true positive rate and false positive rate at different thresholds
+    const thresholds = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0];
     let auc = 0;
-    let truePositives = 0;
-    let falsePositives = 0;
-    let prevTrueRate = 0;
-    let prevFalseRate = 0;
+    let prevFPR = 0;
+    let prevTPR = 0;
     
-    // Calculate ROC points for different thresholds
-    const thresholds = Array.from({ length: 101 }, (_, i) => i / 100);
-    
-    thresholds.forEach(threshold => {
-        // Reset counts for each threshold
-        truePositives = 0;
-        falsePositives = 0;
+    for (const threshold of thresholds) {
+        let tp = 0, fp = 0;
         
-        pairs.forEach(pair => {
+        for (const pair of pairs) {
             if (pair.score >= threshold) {
-                if (pair.label === 1) truePositives++;
-                else falsePositives++;
+                if (pair.label === 1) tp++;
+                else fp++;
             }
-        });
-        
-        const trueRate = truePositives / totalPositives;
-        const falseRate = falsePositives / totalNegatives;
-        
-        // Add trapezoid area
-        if (threshold > 0) {
-            auc += (falseRate - prevFalseRate) * (trueRate + prevTrueRate) / 2;
         }
         
-        prevTrueRate = trueRate;
-        prevFalseRate = falseRate;
-    });
+        const tpr = tp / totalPositives;
+        const fpr = fp / totalNegatives;
+        
+        // Calculate trapezoid area
+        if (threshold < 1.0) {
+            auc += (fpr - prevFPR) * (tpr + prevTPR) / 2;
+        }
+        
+        prevFPR = fpr;
+        prevTPR = tpr;
+    }
     
-    // AUC should be between 0 and 1
+    // Ensure AUC is between 0 and 1
     return Math.max(0, Math.min(1, auc));
 }
 
@@ -1087,97 +1088,110 @@ function displayFeatureImportance() {
     if (!useFeatureGate) {
         container.innerHTML = `
             <h3>Feature Importance</h3>
-            <p>Feature importance gate is disabled. Enable it in Preprocessing section.</p>
+            <p>Feature importance learning is disabled. Enable it in Preprocessing section.</p>
         `;
         return;
     }
     
     try {
-        // Get the feature gate layer
+        // Find feature gate layer
         const gateLayer = appState.model.layers.find(layer => layer.name === 'feature_gate');
         
         if (!gateLayer) {
             container.innerHTML = `
                 <h3>Feature Importance</h3>
-                <p>No feature gate layer found in the model.</p>
+                <p class="status error">Feature gate layer not found in model. Please retrain model with feature gate enabled.</p>
             `;
             return;
         }
         
-        // Get weights from the gate layer
-        const weights = gateLayer.getWeights()[0];
-        const importanceValues = Array.from(weights.dataSync());
-        
-        console.log('Importance values shape:', weights.shape);
-        console.log('Feature names length:', appState.featureNames.length);
-        console.log('Importance values:', importanceValues);
-        
-        // Check if dimensions match
-        if (importanceValues.length !== appState.featureNames.length) {
+        // Get weights from gate layer
+        const weights = gateLayer.getWeights();
+        if (!weights || weights.length === 0) {
             container.innerHTML = `
                 <h3>Feature Importance</h3>
-                <p class="status error">
-                    Dimension mismatch: ${importanceValues.length} importance values vs ${appState.featureNames.length} features.
-                    Try disabling and re-enabling feature gate.
-                </p>
+                <p class="status error">No weights found in feature gate layer.</p>
             `;
             return;
         }
         
-        // Create array of feature objects with importance
-        const featuresWithImportance = appState.featureNames.map((name, index) => ({
-            name,
-            importance: importanceValues[index],
-            index
-        }));
+        // Get the kernel weights (should be inputShape x inputShape)
+        const kernel = weights[0];
+        console.log('Feature gate kernel shape:', kernel.shape);
         
-        // Sort by importance (descending)
-        featuresWithImportance.sort((a, b) => b.importance - a.importance);
+        // For diagonal feature gate, we want the diagonal elements
+        const importanceValues = [];
         
-        // Display top 20 features
-        let html = '<h3>Top Feature Importance (Sigmoid Gate)</h3>';
-        html += '<p>Higher values indicate more important features:</p>';
+        if (kernel.shape[0] === kernel.shape[1]) {
+            // Square matrix - get diagonal
+            for (let i = 0; i < kernel.shape[0]; i++) {
+                importanceValues.push(kernel.dataSync()[i * kernel.shape[1] + i]);
+            }
+        } else {
+            // Not square - take first row or column
+            const values = Array.from(kernel.dataSync());
+            importanceValues.push(...values.slice(0, Math.min(values.length, appState.featureNames.length)));
+        }
         
-        // Create bars for top features
-        const topFeatures = featuresWithImportance.slice(0, 20);
-        const maxImportance = Math.max(...topFeatures.map(f => f.importance));
+        console.log('Extracted importance values:', importanceValues.length);
+        console.log('Expected feature names:', appState.featureNames.length);
         
-        topFeatures.forEach((feature, idx) => {
+        // Match with feature names
+        const featureImportance = [];
+        const minLength = Math.min(importanceValues.length, appState.featureNames.length);
+        
+        for (let i = 0; i < minLength; i++) {
+            featureImportance.push({
+                name: appState.featureNames[i] || `Feature_${i}`,
+                importance: Math.abs(importanceValues[i]), // Use absolute value
+                rawValue: importanceValues[i]
+            });
+        }
+        
+        // Sort by importance
+        featureImportance.sort((a, b) => b.importance - a.importance);
+        
+        // Display
+        let html = '<h3>Feature Importance</h3>';
+        html += '<p>Learnable sigmoid gate importance scores:</p>';
+        
+        if (featureImportance.length === 0) {
+            html += '<p class="status error">No feature importance data available.</p>';
+            container.innerHTML = html;
+            return;
+        }
+        
+        // Find max for normalization
+        const maxImportance = Math.max(...featureImportance.map(f => f.importance));
+        
+        // Display top features
+        featureImportance.slice(0, 15).forEach((feature, idx) => {
             const percentage = maxImportance > 0 ? (feature.importance / maxImportance) * 100 : 0;
             
             html += `
-                <div style="margin: 6px 0;">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
-                        <span style="font-size: 0.85em;">
-                            ${idx + 1}. ${feature.name.length > 30 ? feature.name.substring(0, 30) + '...' : feature.name}
-                        </span>
-                        <span style="font-size: 0.85em; font-weight: bold; color: #82b1ff;">
-                            ${feature.importance.toFixed(3)}
-                        </span>
+                <div style="margin: 8px 0;">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.9em;">
+                        <span>${feature.name}</span>
+                        <span style="font-weight: bold; color: #448aff;">${feature.rawValue.toFixed(3)}</span>
                     </div>
-                    <div style="height: 8px; background: rgba(255, 255, 255, 0.1); border-radius: 4px; overflow: hidden;">
+                    <div style="height: 6px; background: rgba(255, 255, 255, 0.1); border-radius: 3px; overflow: hidden; margin-top: 3px;">
                         <div style="height: 100%; width: ${percentage}%; 
-                            background: linear-gradient(90deg, #448aff, #82b1ff); 
-                            border-radius: 4px;"></div>
+                            background: linear-gradient(90deg, #448aff, #82b1ff);"></div>
                     </div>
                 </div>
             `;
         });
         
-        // Add summary
+        // Show total features count
         html += `
-            <div style="margin-top: 15px; padding: 10px; background: rgba(68, 138, 255, 0.1); border-radius: 6px;">
+            <div style="margin-top: 15px; padding: 10px; background: rgba(68, 138, 255, 0.1); border-radius: 6px; font-size: 0.9em;">
                 <div style="display: flex; justify-content: space-between;">
-                    <span>Total features analyzed:</span>
-                    <span style="font-weight: bold;">${appState.featureNames.length}</span>
+                    <span>Features analyzed:</span>
+                    <span>${featureImportance.length} of ${appState.featureNames.length}</span>
                 </div>
                 <div style="display: flex; justify-content: space-between; margin-top: 5px;">
                     <span>Most important:</span>
-                    <span style="font-weight: bold;">${featuresWithImportance[0].name}</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; margin-top: 5px;">
-                    <span>Least important:</span>
-                    <span style="font-weight: bold;">${featuresWithImportance[featuresWithImportance.length - 1].name}</span>
+                    <span style="font-weight: bold;">${featureImportance[0].name} (${featureImportance[0].rawValue.toFixed(3)})</span>
                 </div>
             </div>
         `;
@@ -1185,10 +1199,11 @@ function displayFeatureImportance() {
         container.innerHTML = html;
         
     } catch (error) {
-        console.error('Error displaying feature importance:', error);
+        console.error('Feature importance error:', error);
         container.innerHTML = `
             <h3>Feature Importance</h3>
             <p class="status error">Error: ${error.message}</p>
+            <p>Try disabling feature gate in preprocessing and retraining.</p>
         `;
     }
 }
